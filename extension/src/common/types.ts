@@ -18,6 +18,7 @@ export type PrivacyCategory =
   | 'email'
   | 'phone'
   | 'address'
+  | 'username'
   | 'password'
   | 'otp'
   | 'credit_card'
@@ -61,17 +62,43 @@ export interface PrivacyDecision {
   reason: string;
 }
 
+export interface ElementBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface CompactElement {
+  id: string;
+  role: string;
+  name: string;
+  type?: string;
+  visible: boolean;
+  enabled: boolean;
+  bounds: ElementBounds;
+  placeholder?: string;
+  context?: string;
+  checked?: boolean;
+}
+
 export interface PerceptionElement {
   id: string;
   role: string;
   text: string;
+  name?: string;
+  type?: string;
   bbox: [number, number, number, number]; // [x, y, width, height]
+  bounds?: ElementBounds;
   visible: boolean;
   enabled: boolean;
   inputType?: string;
-  name?: string;
   autocomplete?: string;
   placeholder?: string;
+  context?: string;
+  checked?: boolean;
+  selected?: boolean;
+  value?: string;
   source: 'dom' | 'vision' | 'accessibility';
 }
 

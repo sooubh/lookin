@@ -24,6 +24,44 @@ export class TokenVault {
   // Category counters for sequential indexing e.g. [EMAIL_1], [EMAIL_2]
   private categoryCounters = new Map<string, number>();
 
+  constructor(initialMappings?: Record<string, string>) {
+    if (initialMappings) {
+      for (const [token, secret] of Object.entries(initialMappings)) {
+        this.store(token, secret);
+      }
+    }
+  }
+
+  /**
+   * Stores a local secret under an opaque token.
+   * e.g. store('[EMAIL_1]', 'alice@privacy-test.dev')
+   */
+  public store(token: string, secretValue: string): void {
+    const normalizedToken = token.startsWith('[') && token.endsWith(']')
+      ? token
+      : `[${token}]`;
+    this.tokenToRaw.set(normalizedToken, secretValue);
+    this.rawToToken.set(secretValue, normalizedToken);
+  }
+
+  public get(token: string): string | undefined {
+    const normalizedToken = token.startsWith('[') && token.endsWith(']')
+      ? token
+      : `[${token}]`;
+    return this.tokenToRaw.get(normalizedToken);
+  }
+
+  public has(token: string): boolean {
+    const normalizedToken = token.startsWith('[') && token.endsWith(']')
+      ? token
+      : `[${token}]`;
+    return this.tokenToRaw.has(normalizedToken);
+  }
+
+  public getKnownTokens(): string[] {
+    return Array.from(this.tokenToRaw.keys());
+  }
+
   /**
    * Tokenizes a raw personal/sensitive value into a safe client-side placeholder.
    * INVARIANT: Tier 3 secrets (passwords, OTPs, API keys) must NEVER be tokenized
@@ -141,7 +179,7 @@ export class TokenVault {
   /**
    * Total number of stored tokens.
    */
-  public get size(): number {
+  public size(): number {
     return this.tokenToRaw.size;
   }
 
@@ -174,6 +212,8 @@ export class TokenVault {
         return 'PHONE';
       case 'address':
         return 'ADDRESS';
+      case 'username':
+        return 'USER';
       case 'credit_card':
         return 'CARD';
       case 'bank_account':

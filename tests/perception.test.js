@@ -8,11 +8,15 @@ import {
   isElementEnabled,
   resetElementIdRegistry,
   getElementByPerceptionId,
+  toCompactElement,
+  toCompactRepresentation,
 } from '../dist/extension/src/perception/dom.js';
 
 import {
   computeAccessibleRole,
   computeAccessibleName,
+  computeNearbyContext,
+  getFormLabelText,
   getAccessibilityInfo,
 } from '../dist/extension/src/perception/accessibility.js';
 
@@ -106,6 +110,28 @@ class SyntheticElement {
     this.children = [];
   }
 
+  get nextElementSibling() {
+    if (!this.parentElement) return null;
+    const siblings = this.parentElement.children;
+    const idx = siblings.indexOf(this);
+    return idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null;
+  }
+
+  get previousElementSibling() {
+    if (!this.parentElement) return null;
+    const siblings = this.parentElement.children;
+    const idx = siblings.indexOf(this);
+    return idx > 0 ? siblings[idx - 1] : null;
+  }
+
+  get ownerDocument() {
+    let curr = this;
+    while (curr.parentElement) {
+      curr = curr.parentElement;
+    }
+    return curr._document || null;
+  }
+
   closest(selector) {
     let curr = this;
     while (curr) {
@@ -121,11 +147,17 @@ class SyntheticElement {
   }
 
   querySelectorAll(selector) {
+    const subSelectors = selector.split(',').map((s) => s.trim());
     const results = [];
+    const seen = new Set();
     const traverse = (node) => {
       for (const child of node.children) {
-        if (matchesSelector(child, selector)) {
-          results.push(child);
+        for (const sub of subSelectors) {
+          if (matchesSelector(child, sub) && !seen.has(child)) {
+            results.push(child);
+            seen.add(child);
+            break;
+          }
         }
         traverse(child);
       }
@@ -138,14 +170,18 @@ class SyntheticElement {
 class SyntheticDocument {
   constructor() {
     this.documentElement = new SyntheticElement('html');
+    this.documentElement._document = this;
     this.body = new SyntheticElement('body');
+    this.body._document = this;
     this.documentElement.appendChild(this.body);
     this.title = 'Test Synthetic Page';
     this.location = { href: 'https://example.com/test-perception' };
   }
 
   createElement(tagName, attrs = {}, text = '') {
-    return new SyntheticElement(tagName, attrs, text);
+    const el = new SyntheticElement(tagName, attrs, text);
+    el._document = this;
+    return el;
   }
 
   getElementById(id) {
@@ -645,3 +681,308 @@ test('Perception Fusion: Produces valid structured PagePerception in reading ord
   assert.strictEqual(pagePerception.elements[2].role, 'button');
   assert.strictEqual(pagePerception.elements[2].text, 'Pay Now');
 });
+
+// ----------------------------------------------------------------------------
+// TEST SUITE 7: ACCESSIBILITY NAME PRIORITY HIERARCHY
+// ----------------------------------------------------------------------------
+
+test('Accessibility Name Priority: Strict resolution order', () => {
+  const doc = new SyntheticDocument();
+
+  // Heading element for aria-labelledby
+  const header = doc.createElement('span', { id: 'hdr-label' }, 'Header Reference Label');
+  doc.body.appendChild(header);
+
+  // 1. aria-labelledby beats everything (aria-label, associated label, placeholder, title)
+  const input1 = doc.createElement('input', {
+    id: 'inp-1',
+    'aria-labelledby': 'hdr-label',
+    'aria-label': 'Ignored Aria Label',
+    placeholder: 'Ignored Placeholder',
+    title: 'Ignored Title',
+  });
+  doc.body.appendChild(input1);
+  assert.strictEqual(computeAccessibleName(input1, doc), 'Header Reference Label');
+
+  // 2. aria-label beats associated label, placeholder, title
+  const labelFor2 = doc.createElement('label', { for: 'inp-2' }, 'Associated Label Text');
+  doc.body.appendChild(labelFor2);
+  const input2 = doc.createElement('input', {
+    id: 'inp-2',
+    'aria-label': 'Winning Aria Label',
+    placeholder: 'Ignored Placeholder',
+    title: 'Ignored Title',
+  });
+  doc.body.appendChild(input2);
+  assert.strictEqual(computeAccessibleName(input2, doc), 'Winning Aria Label');
+
+  // 3. Associated <label for="..."> beats placeholder, title, name
+  const labelFor3 = doc.createElement('label', { for: 'inp-3' }, 'Winning Associated Label');
+  doc.body.appendChild(labelFor3);
+  const input3 = doc.createElement('input', {
+    id: 'inp-3',
+    placeholder: 'Secondary Placeholder',
+    title: 'Secondary Title',
+    name: 'tertiaryName',
+  });
+  doc.body.appendChild(input3);
+  assert.strictEqual(computeAccessibleName(input3, doc), 'Winning Associated Label');
+
+  // 4. Enclosing parent <label> beats placeholder and title
+  const parentLabel = doc.createElement('label', {}, 'Enclosing Label Text');
+  const input4 = doc.createElement('input', {
+    type: 'checkbox',
+    placeholder: 'Ignored Placeholder',
+    title: 'Ignored Title',
+  });
+  parentLabel.appendChild(input4);
+  doc.body.appendChild(parentLabel);
+  assert.strictEqual(computeAccessibleName(input4, doc), 'Enclosing Label Text');
+
+  // 5. Sibling <label> for checkboxes/radios
+  const input5 = doc.createElement('input', { type: 'checkbox', id: 'inp-5' });
+  const siblingLabel = doc.createElement('label', {}, 'Adjacent Sibling Label');
+  doc.body.appendChild(input5);
+  doc.body.appendChild(siblingLabel);
+  assert.strictEqual(computeAccessibleName(input5, doc), 'Adjacent Sibling Label');
+
+  // 6. Placeholder beats title and name when no labels are present
+  const input6 = doc.createElement('input', {
+    type: 'text',
+    placeholder: 'Winning Placeholder',
+    title: 'Fallback Title',
+    name: 'fallbackName',
+  });
+  doc.body.appendChild(input6);
+  assert.strictEqual(computeAccessibleName(input6, doc), 'Winning Placeholder');
+
+  // 7. Title beats name attribute
+  const input7 = doc.createElement('input', {
+    type: 'text',
+    title: 'Winning Title',
+    name: 'fallbackName',
+  });
+  doc.body.appendChild(input7);
+  assert.strictEqual(computeAccessibleName(input7, doc), 'Winning Title');
+
+  // 8. Fallback name attribute
+  const input8 = doc.createElement('input', {
+    type: 'text',
+    name: 'fallbackFieldName',
+  });
+  doc.body.appendChild(input8);
+  assert.strictEqual(computeAccessibleName(input8, doc), 'fallbackFieldName');
+});
+
+// ----------------------------------------------------------------------------
+// TEST SUITE 8: COMMON INTERACTIVE ELEMENTS & ROLES
+// ----------------------------------------------------------------------------
+
+test('Perception DOM: Comprehensive support for common interactive elements', () => {
+  resetElementIdRegistry();
+  const doc = new SyntheticDocument();
+
+  // 1. Button
+  const btn = doc.createElement('button', { id: 'btn-test' }, 'Save Changes');
+  btn.setRect(10, 10, 120, 36);
+  doc.body.appendChild(btn);
+
+  // 2. Link
+  const link = doc.createElement('a', { href: '/dashboard' }, 'Go to Dashboard');
+  link.setRect(10, 50, 150, 24);
+  doc.body.appendChild(link);
+
+  // 3. Text input with label
+  const labelEmail = doc.createElement('label', { for: 'email-in' }, 'Email Address');
+  doc.body.appendChild(labelEmail);
+  const inputEmail = doc.createElement('input', { id: 'email-in', type: 'email', placeholder: 'user@example.com' });
+  inputEmail.setRect(10, 80, 250, 36);
+  doc.body.appendChild(inputEmail);
+
+  // 4. Password input
+  const inputPass = doc.createElement('input', { id: 'pass-in', type: 'password', 'aria-label': 'Password' });
+  inputPass.setRect(10, 120, 250, 36);
+  doc.body.appendChild(inputPass);
+
+  // 5. Textarea
+  const textarea = doc.createElement('textarea', { id: 'bio-in', placeholder: 'About you' });
+  textarea.setRect(10, 160, 300, 80);
+  doc.body.appendChild(textarea);
+
+  // 6. Select
+  const select = doc.createElement('select', { id: 'role-select', 'aria-label': 'Select Role' });
+  select.setRect(10, 250, 180, 36);
+  doc.body.appendChild(select);
+
+  // 7. Checkbox (checked)
+  const labelTerms = doc.createElement('label', { for: 'terms-check' }, 'Agree to Terms');
+  doc.body.appendChild(labelTerms);
+  const check = doc.createElement('input', { id: 'terms-check', type: 'checkbox', checked: 'true' });
+  check.checked = true;
+  check.setRect(10, 300, 20, 20);
+  doc.body.appendChild(check);
+
+  // 8. Radio (unchecked)
+  const labelRadio = doc.createElement('label', { for: 'radio-opt' }, 'Standard Shipping');
+  doc.body.appendChild(labelRadio);
+  const radio = doc.createElement('input', { id: 'radio-opt', type: 'radio' });
+  radio.checked = false;
+  radio.setRect(10, 330, 20, 20);
+  doc.body.appendChild(radio);
+
+  const elements = extractDomElements({ document: doc, includeTextBlocks: false });
+  assert.strictEqual(elements.length, 8);
+
+  // Button
+  assert.strictEqual(elements[0].role, 'button');
+  assert.strictEqual(elements[0].name, 'Save Changes');
+
+  // Link
+  assert.strictEqual(elements[1].role, 'link');
+  assert.strictEqual(elements[1].name, 'Go to Dashboard');
+
+  // Email input
+  assert.strictEqual(elements[2].role, 'textbox');
+  assert.strictEqual(elements[2].type, 'email');
+  assert.strictEqual(elements[2].name, 'Email Address');
+
+  // Password input
+  assert.strictEqual(elements[3].role, 'textbox');
+  assert.strictEqual(elements[3].type, 'password');
+  assert.strictEqual(elements[3].name, 'Password');
+
+  // Textarea
+  assert.strictEqual(elements[4].role, 'textbox');
+  assert.strictEqual(elements[4].type, 'textarea');
+  assert.strictEqual(elements[4].placeholder, 'About you');
+
+  // Select
+  assert.strictEqual(elements[5].role, 'combobox');
+  assert.strictEqual(elements[5].type, 'select');
+  assert.strictEqual(elements[5].name, 'Select Role');
+
+  // Checkbox
+  assert.strictEqual(elements[6].role, 'checkbox');
+  assert.strictEqual(elements[6].type, 'checkbox');
+  assert.strictEqual(elements[6].checked, true);
+  assert.strictEqual(elements[6].name, 'Agree to Terms');
+
+  // Radio
+  assert.strictEqual(elements[7].role, 'radio');
+  assert.strictEqual(elements[7].type, 'radio');
+  assert.strictEqual(elements[7].checked, false);
+  assert.strictEqual(elements[7].name, 'Standard Shipping');
+});
+
+// ----------------------------------------------------------------------------
+// TEST SUITE 9: NEARBY SEMANTIC CONTEXT EXTRACTION
+// ----------------------------------------------------------------------------
+
+test('Perception DOM: Extracts nearby semantic context from fieldsets and headings', () => {
+  resetElementIdRegistry();
+  const doc = new SyntheticDocument();
+
+  // Fieldset with legend
+  const fieldset = doc.createElement('fieldset');
+  const legend = doc.createElement('legend', {}, 'Payment Method');
+  fieldset.appendChild(legend);
+
+  const radioCard = doc.createElement('input', { type: 'radio', id: 'pay-card', 'aria-label': 'Credit Card' });
+  radioCard.setRect(20, 20, 20, 20);
+  fieldset.appendChild(radioCard);
+  doc.body.appendChild(fieldset);
+
+  // Section with heading
+  const section = doc.createElement('section');
+  const h2 = doc.createElement('h2', {}, 'Billing Address');
+  section.appendChild(h2);
+
+  const inputStreet = doc.createElement('input', { type: 'text', placeholder: 'Street Address' });
+  inputStreet.setRect(20, 60, 200, 35);
+  section.appendChild(inputStreet);
+  doc.body.appendChild(section);
+
+  const elements = extractDomElements({ document: doc, includeTextBlocks: false });
+  assert.strictEqual(elements.length, 2);
+
+  assert.strictEqual(elements[0].context, 'Payment Method');
+  assert.strictEqual(elements[1].context, 'Billing Address');
+});
+
+// ----------------------------------------------------------------------------
+// TEST SUITE 10: DUPLICATE-LOOKING ELEMENTS
+// ----------------------------------------------------------------------------
+
+test('Perception DOM: Duplicate-looking elements receive unique stable IDs and distinct bounds', () => {
+  resetElementIdRegistry();
+  const doc = new SyntheticDocument();
+
+  // Two identical "Delete" buttons in different rows
+  const deleteBtnRow1 = doc.createElement('button', { class: 'btn-danger' }, 'Delete');
+  deleteBtnRow1.setRect(500, 100, 80, 30);
+  doc.body.appendChild(deleteBtnRow1);
+
+  const deleteBtnRow2 = doc.createElement('button', { class: 'btn-danger' }, 'Delete');
+  deleteBtnRow2.setRect(500, 150, 80, 30);
+  doc.body.appendChild(deleteBtnRow2);
+
+  const elements = extractDomElements({ document: doc, includeTextBlocks: false });
+  assert.strictEqual(elements.length, 2);
+
+  // Both have identical text and role
+  assert.strictEqual(elements[0].role, 'button');
+  assert.strictEqual(elements[1].role, 'button');
+  assert.strictEqual(elements[0].name, 'Delete');
+  assert.strictEqual(elements[1].name, 'Delete');
+
+  // But strictly distinct unique stable IDs
+  assert.notStrictEqual(elements[0].id, elements[1].id);
+  assert.deepStrictEqual(elements[0].bounds, { x: 500, y: 100, width: 80, height: 30 });
+  assert.deepStrictEqual(elements[1].bounds, { x: 500, y: 150, width: 80, height: 30 });
+
+  // And getElementByPerceptionId resolves each to the exact distinct element
+  assert.strictEqual(getElementByPerceptionId(elements[0].id), deleteBtnRow1);
+  assert.strictEqual(getElementByPerceptionId(elements[1].id), deleteBtnRow2);
+});
+
+// ----------------------------------------------------------------------------
+// TEST SUITE 11: COMPACT STRUCTURED PAGE REPRESENTATION
+// ----------------------------------------------------------------------------
+
+test('Perception DOM: Produces compact structured representations for agent reasoning', () => {
+  resetElementIdRegistry();
+  const doc = new SyntheticDocument();
+  doc.title = 'User Profile';
+  doc.location = { href: 'https://example.com/profile' };
+
+  const inputEmail = doc.createElement('input', {
+    type: 'email',
+    id: 'user-email',
+    placeholder: 'alex@example.com',
+    'aria-label': 'Email address',
+  });
+  inputEmail.setRect(210, 340, 320, 42);
+  doc.body.appendChild(inputEmail);
+
+  const pagePerception = fusePerception({ document: doc, viewport: { width: 1280, height: 800 } });
+  const compact = toCompactRepresentation(pagePerception);
+
+  assert.strictEqual(compact.url, 'https://example.com/profile');
+  assert.strictEqual(compact.title, 'User Profile');
+  assert.deepStrictEqual(compact.viewport, { width: 1280, height: 800 });
+  assert.strictEqual(compact.elements.length, 1);
+
+  const compactEl = compact.elements[0];
+  assert.strictEqual(compactEl.role, 'textbox');
+  assert.strictEqual(compactEl.name, 'Email address');
+  assert.strictEqual(compactEl.type, 'email');
+  assert.strictEqual(compactEl.visible, true);
+  assert.strictEqual(compactEl.enabled, true);
+  assert.deepStrictEqual(compactEl.bounds, {
+    x: 210,
+    y: 340,
+    width: 320,
+    height: 42,
+  });
+});
+

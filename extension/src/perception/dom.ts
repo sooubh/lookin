@@ -5,10 +5,11 @@
  * and visibility/enabled states.
  */
 
-import { PerceptionElement } from '../common/types.js';
+import { PerceptionElement, CompactElement, ElementBounds, PagePerception } from '../common/types.js';
 import {
   computeAccessibleRole,
   computeAccessibleName,
+  computeNearbyContext,
   getAccessibilityInfo,
 } from './accessibility.js';
 
@@ -275,39 +276,84 @@ export function extractDomElements(options: DomExtractionOptions = {}): Percepti
     processedElements.add(el);
 
     const bbox = computeBoundingBox(el);
+    const [bx, by, bw, bh] = bbox;
+    const bounds: ElementBounds = { x: bx, y: by, width: bw, height: bh };
     const visible = isElementVisible(el, bbox, win);
     const enabled = isElementEnabled(el);
     const role = computeAccessibleRole(el);
     const text = computeAccessibleName(el, doc);
     const id = registry.getOrCreateId(el);
+    const context = computeNearbyContext(el, doc);
+
+    const tag = el.tagName.toUpperCase();
+    let inputType: string | undefined;
+    if (tag === 'INPUT') {
+      inputType = (el.getAttribute('type') || 'text').toLowerCase();
+    } else if (tag === 'TEXTAREA') {
+      inputType = 'textarea';
+    } else if (tag === 'SELECT') {
+      inputType = 'select';
+    }
+
+    const nameAttr = el.getAttribute('name');
 
     const perceptionEl: PerceptionElement = {
       id,
       role,
+      name: nameAttr || text,
       text,
+      type: inputType,
+      inputType,
       bbox,
+      bounds,
       visible,
       enabled,
       source: 'dom',
     };
 
-    const tag = el.tagName.toUpperCase();
-    if (tag === 'INPUT') {
-      perceptionEl.inputType = (el.getAttribute('type') || 'text').toLowerCase();
-    } else if (tag === 'TEXTAREA') {
-      perceptionEl.inputType = 'textarea';
-    } else if (tag === 'SELECT') {
-      perceptionEl.inputType = 'select';
-    }
-
-    const name = el.getAttribute('name');
-    if (name) perceptionEl.name = name;
+    if (context) perceptionEl.context = context;
 
     const autocomplete = el.getAttribute('autocomplete');
     if (autocomplete) perceptionEl.autocomplete = autocomplete;
 
     const placeholder = el.getAttribute('placeholder');
     if (placeholder) perceptionEl.placeholder = placeholder;
+
+    // Checkbox and radio checked state
+    if (
+      inputType === 'checkbox' ||
+      inputType === 'radio' ||
+      role === 'checkbox' ||
+      role === 'radio' ||
+      role === 'switch'
+    ) {
+      if ('checked' in el) {
+        perceptionEl.checked = Boolean((el as unknown as { checked?: boolean }).checked);
+      } else if (el.getAttribute('aria-checked') === 'true') {
+        perceptionEl.checked = true;
+      } else if (el.hasAttribute('checked')) {
+        perceptionEl.checked = true;
+      } else {
+        perceptionEl.checked = false;
+      }
+    }
+
+    // Select option selected state
+    if (tag === 'OPTION' || role === 'option') {
+      if ('selected' in el) {
+        perceptionEl.selected = Boolean((el as unknown as { selected?: boolean }).selected);
+      } else if (el.getAttribute('aria-selected') === 'true') {
+        perceptionEl.selected = true;
+      } else if (el.hasAttribute('selected')) {
+        perceptionEl.selected = true;
+      }
+    }
+
+    // Field value for non-password fields
+    if ('value' in el && inputType !== 'password') {
+      const val = String((el as unknown as { value?: string }).value || '').trim();
+      if (val) perceptionEl.value = val;
+    }
 
     results.push(perceptionEl);
   }
@@ -339,24 +385,74 @@ export function extractDomElements(options: DomExtractionOptions = {}): Percepti
 
       processedElements.add(el);
       const bbox = computeBoundingBox(el);
+      const [bx, by, bw, bh] = bbox;
+      const bounds: ElementBounds = { x: bx, y: by, width: bw, height: bh };
       const visible = isElementVisible(el, bbox, win);
       const enabled = isElementEnabled(el);
       const role = computeAccessibleRole(el);
       const id = registry.getOrCreateId(el);
+      const context = computeNearbyContext(el, doc);
 
       const perceptionEl: PerceptionElement = {
         id,
         role,
+        name: text,
         text,
         bbox,
+        bounds,
         visible,
         enabled,
         source: 'dom',
       };
+      if (context) perceptionEl.context = context;
 
       results.push(perceptionEl);
     }
   }
 
   return results;
+}
+
+/**
+ * Converts a PerceptionElement to the compact representation required for local page understanding.
+ */
+export function toCompactElement(el: PerceptionElement): CompactElement {
+  const compact: CompactElement = {
+    id: el.id,
+    role: el.role,
+    name: el.name || el.text || '',
+    visible: el.visible,
+    enabled: el.enabled,
+    bounds: el.bounds || {
+      x: el.bbox[0],
+      y: el.bbox[1],
+      width: el.bbox[2],
+      height: el.bbox[3],
+    },
+  };
+
+  const type = el.type || el.inputType;
+  if (type) compact.type = type;
+  if (el.placeholder) compact.placeholder = el.placeholder;
+  if (el.context) compact.context = el.context;
+  if (typeof el.checked === 'boolean') compact.checked = el.checked;
+
+  return compact;
+}
+
+/**
+ * Creates a complete compact structured representation of the page perception.
+ */
+export function toCompactRepresentation(perception: PagePerception): {
+  url: string;
+  title: string;
+  viewport: { width: number; height: number };
+  elements: CompactElement[];
+} {
+  return {
+    url: perception.url,
+    title: perception.title,
+    viewport: perception.viewport,
+    elements: perception.elements.map(toCompactElement),
+  };
 }

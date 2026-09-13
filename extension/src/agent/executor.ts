@@ -12,76 +12,10 @@
 import { PagePerception, ActionType, RiskLevel } from '../common/types.js';
 import { ActionGuard, ActionGuardOptions } from './action-guard.js';
 import { ValidatedAction, ValidatedActionTarget } from './action-schema.js';
+import { TokenVault } from '../privacy/token-vault.js';
+import { getElementByPerceptionId } from '../perception/dom.js';
 
-/**
- * Browser-local token vault storing placeholder-to-secret mappings.
- * Lives exclusively within the client execution context (MV3 memory / session storage).
- */
-export class TokenVault {
-  private vault: Map<string, string> = new Map();
-
-  constructor(initialMappings?: Record<string, string>) {
-    if (initialMappings) {
-      for (const [token, secret] of Object.entries(initialMappings)) {
-        this.store(token, secret);
-      }
-    }
-  }
-
-  /**
-   * Stores a local secret under an opaque token.
-   * e.g. store('[EMAIL_1]', 'alice@privacy-test.dev')
-   */
-  public store(token: string, secretValue: string): void {
-    const normalizedToken = token.startsWith('[') && token.endsWith(']')
-      ? token
-      : `[${token}]`;
-    this.vault.set(normalizedToken, secretValue);
-  }
-
-  public get(token: string): string | undefined {
-    const normalizedToken = token.startsWith('[') && token.endsWith(']')
-      ? token
-      : `[${token}]`;
-    return this.vault.get(normalizedToken);
-  }
-
-  public has(token: string): boolean {
-    const normalizedToken = token.startsWith('[') && token.endsWith(']')
-      ? token
-      : `[${token}]`;
-    return this.vault.has(normalizedToken);
-  }
-
-  /**
-   * Resolves any tokens present in the string with real local secret values.
-   * Only called immediately before typing into a DOM element.
-   */
-  public resolveTokens(text: string): { resolvedText: string; tokensResolved: string[] } {
-    const tokensResolved: string[] = [];
-    const resolvedText = text.replace(/\[([A-Z0-9_]+)\]/g, (match) => {
-      if (this.vault.has(match)) {
-        tokensResolved.push(match);
-        return this.vault.get(match)!;
-      }
-      return match;
-    });
-
-    return { resolvedText, tokensResolved };
-  }
-
-  public clear(): void {
-    this.vault.clear();
-  }
-
-  public size(): number {
-    return this.vault.size;
-  }
-
-  public getKnownTokens(): string[] {
-    return Array.from(this.vault.keys());
-  }
-}
+export { TokenVault };
 
 export interface ExecutionContext {
   document?: Document | any;
@@ -371,13 +305,23 @@ export class BrowserExecutor {
   ): any {
     if (!target && !matchedId) return null;
 
-    // 1. By matched perception element ID
+    // 1. By perception element registry lookup
+    if (matchedId) {
+      const el = getElementByPerceptionId(matchedId);
+      if (el) return el;
+    }
+    if (target?.id) {
+      const el = getElementByPerceptionId(target.id);
+      if (el) return el;
+    }
+
+    // 2. By matched ID as HTML id attribute
     if (matchedId && typeof doc.getElementById === 'function') {
       const el = doc.getElementById(matchedId);
       if (el) return el;
     }
 
-    // 2. By target.id
+    // 3. By target.id as HTML id attribute
     if (target?.id && typeof doc.getElementById === 'function') {
       const el = doc.getElementById(target.id);
       if (el) return el;

@@ -19,6 +19,7 @@ import { TokenVault } from '../privacy/token-vault.js';
 import { redactPerceptionElements } from '../privacy/redactor.js';
 import { assertSafeToTransmit } from '../privacy/payload-sanitizer.js';
 import { generatePrivacyReceipt } from '../privacy/privacy-receipt.js';
+import { buildTaskContext } from '../privacy/context-planner.js';
 import { ActionGuard } from '../agent/action-guard.js';
 
 // DOM element references
@@ -167,43 +168,21 @@ runTaskBtn.addEventListener('click', async () => {
     // 1. Run local page perception
     const perception = await runPerception();
 
-    // 2. Task requirement planning
-    const taskReq = planTaskRequirements(task);
-
-    // 3. Local PII detection
-    const detections = detectPIIFromPerceptionElements(perception.elements);
-
-    // 4. Privacy decisions
-    const decisions = evaluateBatchPolicy(detections, taskReq, sessionTokenVault);
-
+    // 2. Task-Aware Context Planning:
+    // Determine required info, evaluate policies, tokenize/block/omit, and build minimum-safe payload
+    const planned = buildTaskContext(task, perception, sessionTokenVault);
+    const sanitizedPayload = planned.sanitizedContext;
+    const receipt = sanitizedPayload.privacyReceipt;
     const localInferenceMs = Date.now() - startTime;
-
-    // 5. Redact perception elements for transmission
-    const redactedElements = redactPerceptionElements(perception.elements, detections, decisions);
-
-    // 6. Build sanitized payload and local privacy receipt
-    const receipt = generatePrivacyReceipt(decisions, { localInferenceMs, serverReasoningMs: 0 });
-    const sanitizedPayload = buildSanitizedPayload(
-      task,
-      perception.url,
-      redactedElements,
-      perception.viewport,
-      taskReq.allowedActions,
-      receipt
-    );
-
-    // 7. Pre-fetch leak scan (Strict Fail-Closed)
-    assertSafeToTransmit(sanitizedPayload, sessionTokenVault);
 
     // Update Live Metrics in Side Panel
     metricPiiDetectedEl.textContent = String(receipt.detected);
     metricBlockedEl.textContent = String(receipt.blocked);
     metricTokenizedEl.textContent = String(receipt.tokenized);
     metricAllowedEl.textContent = String(receipt.allowed);
-    const payloadBytes = new TextEncoder().encode(JSON.stringify(sanitizedPayload)).length;
-    metricContextSizeEl.textContent = (payloadBytes / 1024).toFixed(1) + ' KB';
+    metricContextSizeEl.textContent = `${(planned.sanitizedBytes / 1024).toFixed(1)} KB (-${planned.reductionPercent}%)`;
 
-    // 8. Call Node Gateway /agent/reason
+    // 3. Call Node Gateway /agent/reason
     actionGuardStatusEl.innerHTML = `<em>Querying reasoning gateway (sanitized context only)...</em>`;
     const gatewayUrl = 'http://127.0.0.1:3000/agent/reason';
 

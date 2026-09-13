@@ -188,7 +188,7 @@ export function isCategoryRequiredForTask(
 
   // Form filling requires semantic field labels / tokenized personal context
   if (requirement.intent === 'fill_form') {
-    if (category === 'name' || category === 'email' || category === 'phone' || category === 'address') {
+    if (category === 'name' || category === 'email' || category === 'phone' || category === 'address' || category === 'username') {
       return true;
     }
   }

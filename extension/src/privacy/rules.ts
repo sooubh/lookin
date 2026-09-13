@@ -205,7 +205,7 @@ export const DETERMINISTIC_RULES: DeterministicRule[] = [
     tier: SENSITIVITY_TIERS.SENSITIVE,
     confidence: 0.99,
     description: 'International Bank Account Number (IBAN) verified with MOD 97',
-    pattern: /\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b/i,
+    pattern: /\b[A-Z]{2}\d{2}(?:[ -]?[A-Z0-9]{4}){2,7}(?:[ -]?[A-Z0-9]{1,4})?\b/i,
     validator: (match) => validateIBAN(match),
   },
 

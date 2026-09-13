@@ -153,9 +153,10 @@ function getTextFromIdList(idListStr: string, contextDoc?: Document | null): str
 }
 
 /**
- * Finds associated `<label>` text for form elements (via `for` attribute or enclosing label).
+ * Finds associated `<label>` text for form controls and interactive elements
+ * (via `for` attribute, enclosing label, or adjacent label sibling).
  */
-function getFormLabelText(element: Element, contextDoc?: Document | null): string {
+export function getFormLabelText(element: Element, contextDoc?: Document | null): string {
   const elementId = element.getAttribute('id');
   if (elementId && contextDoc) {
     let labelEl: Element | null = null;
@@ -177,12 +178,41 @@ function getFormLabelText(element: Element, contextDoc?: Document | null): strin
   let parent = element.parentElement;
   while (parent) {
     if (parent.tagName.toUpperCase() === 'LABEL') {
-      // Clone or extract text excluding this input's own value if needed
       const clone = parent.textContent || '';
       const trimmed = clone.trim().replace(/\s+/g, ' ');
       if (trimmed) return trimmed;
     }
     parent = parent.parentElement;
+  }
+
+  // Check adjacent sibling <label> (common pattern for checkboxes and radio buttons)
+  const isCheckOrRadio =
+    element.getAttribute('type') === 'checkbox' ||
+    element.getAttribute('type') === 'radio' ||
+    element.getAttribute('role') === 'checkbox' ||
+    element.getAttribute('role') === 'radio';
+
+  let next = element.nextElementSibling;
+  if (next && next.tagName.toUpperCase() === 'LABEL') {
+    const forAttr = next.getAttribute('for');
+    if (!forAttr && isCheckOrRadio) {
+      const text = (next.textContent || '').trim().replace(/\s+/g, ' ');
+      if (text) return text;
+    } else if (forAttr && elementId && forAttr === elementId) {
+      const text = (next.textContent || '').trim().replace(/\s+/g, ' ');
+      if (text) return text;
+    }
+  }
+  let prev = element.previousElementSibling;
+  if (prev && prev.tagName.toUpperCase() === 'LABEL') {
+    const forAttr = prev.getAttribute('for');
+    if (!forAttr && isCheckOrRadio) {
+      const text = (prev.textContent || '').trim().replace(/\s+/g, ' ');
+      if (text) return text;
+    } else if (forAttr && elementId && forAttr === elementId) {
+      const text = (prev.textContent || '').trim().replace(/\s+/g, ' ');
+      if (text) return text;
+    }
   }
 
   return '';
@@ -193,7 +223,7 @@ function getFormLabelText(element: Element, contextDoc?: Document | null): strin
  * Priority:
  * 1. aria-labelledby
  * 2. aria-label
- * 3. Associated <label> (for form controls)
+ * 3. Associated <label> (for form controls and interactive widgets)
  * 4. Button/Input value or alt
  * 5. Text content (for buttons, links, headings)
  * 6. placeholder attribute
@@ -217,9 +247,20 @@ export function computeAccessibleName(element: Element, doc?: Document): string 
   }
 
   const tag = element.tagName.toUpperCase();
+  const role = (element.getAttribute('role') || '').toLowerCase();
 
-  // 3. Form control label (label[for] or enclosing label)
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+  // 3. Form control label (label[for], enclosing label, or adjacent label)
+  const isFormControl =
+    tag === 'INPUT' ||
+    tag === 'TEXTAREA' ||
+    tag === 'SELECT' ||
+    role === 'checkbox' ||
+    role === 'radio' ||
+    role === 'textbox' ||
+    role === 'combobox' ||
+    role === 'switch';
+
+  if (isFormControl) {
     const labelText = getFormLabelText(element, contextDoc);
     if (labelText) return labelText;
   }
@@ -245,7 +286,7 @@ export function computeAccessibleName(element: Element, doc?: Document): string 
 
   // 5. Element text content (for buttons, links, headings, summary, etc.)
   const textualTags = new Set(['BUTTON', 'A', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'SUMMARY', 'OPTION', 'P', 'SPAN']);
-  if (textualTags.has(tag) || element.getAttribute('role') === 'button' || element.getAttribute('role') === 'link') {
+  if (textualTags.has(tag) || role === 'button' || role === 'link' || role === 'tab') {
     const rawText = element.textContent || '';
     const trimmed = rawText.trim().replace(/\s+/g, ' ');
     if (trimmed) return trimmed;
@@ -272,6 +313,68 @@ export function computeAccessibleName(element: Element, doc?: Document): string 
   // Default fallback for any remaining textContent
   const fallbackText = (element.textContent || '').trim().replace(/\s+/g, ' ');
   return fallbackText;
+}
+
+/**
+ * Discovers nearby semantic context (fieldset legend, container heading, or region label).
+ */
+export function computeNearbyContext(element: Element, doc?: Document | null): string | undefined {
+  const contextDoc = doc || (element.ownerDocument as Document | undefined) || null;
+
+  // 1. Enclosing fieldset legend
+  if (typeof element.closest === 'function') {
+    try {
+      const fieldset = element.closest('fieldset');
+      if (fieldset) {
+        const legend = fieldset.querySelector('legend');
+        if (legend && legend.textContent?.trim()) {
+          return legend.textContent.trim().replace(/\s+/g, ' ');
+        }
+      }
+    } catch {
+      // Ignore if closest is not implemented in synthetic trees
+    }
+  }
+
+  // 2. Traverse ancestor containers for legend, heading, or region label
+  let curr = element.parentElement;
+  while (curr && curr.tagName.toUpperCase() !== 'BODY' && curr.tagName.toUpperCase() !== 'HTML') {
+    const tag = curr.tagName.toUpperCase();
+
+    if (tag === 'FIELDSET') {
+      const legend = typeof curr.querySelector === 'function' ? curr.querySelector('legend') : null;
+      if (legend && legend.textContent?.trim()) {
+        return legend.textContent.trim().replace(/\s+/g, ' ');
+      }
+    }
+
+    const ariaLabel = curr.getAttribute('aria-label');
+    if (ariaLabel && ariaLabel.trim()) {
+      return ariaLabel.trim().replace(/\s+/g, ' ');
+    }
+
+    const labelledBy = curr.getAttribute('aria-labelledby');
+    if (labelledBy && contextDoc) {
+      const labelText = getTextFromIdList(labelledBy, contextDoc);
+      if (labelText) return labelText;
+    }
+
+    if (tag === 'FORM' || tag === 'SECTION' || tag === 'ARTICLE' || (tag === 'DIV' && curr.getAttribute('role') === 'region')) {
+      if (typeof curr.querySelector === 'function') {
+        const heading = curr.querySelector('h1, h2, h3, h4, h5, h6');
+        if (heading && heading.textContent?.trim()) {
+          const hText = heading.textContent.trim().replace(/\s+/g, ' ');
+          if (hText.length < 80) {
+            return hText;
+          }
+        }
+      }
+    }
+
+    curr = curr.parentElement;
+  }
+
+  return undefined;
 }
 
 /**

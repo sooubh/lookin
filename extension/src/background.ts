@@ -39,6 +39,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             interactiveCount: 0,
             timestamp: Date.now(),
           });
+        } else if (message.type === 'EXECUTE_ACTION') {
+          sendResponse({
+            type: 'ACTION_EXECUTION_RESULT',
+            id: message.id,
+            success: false,
+            action: message.action,
+            error: 'No active tab available for action execution',
+            timestamp: Date.now(),
+          });
         } else {
           sendResponse({
             type: 'PERCEPTION_RESPONSE',
@@ -65,6 +74,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
               title: activeTab.title || '',
               viewport: { width: 0, height: 0 },
               interactiveCount: 0,
+              timestamp: Date.now(),
+            });
+          } else if (message.type === 'EXECUTE_ACTION') {
+            sendResponse({
+              type: 'ACTION_EXECUTION_RESULT',
+              id: message.id,
+              success: false,
+              action: message.action,
+              error: chrome.runtime.lastError?.message || 'Failed to dispatch action to content script',
               timestamp: Date.now(),
             });
           } else {

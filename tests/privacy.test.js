@@ -63,12 +63,13 @@ test('Phase A5/A7: Sensitivity Tiers and Categories Definition', () => {
   assert.strictEqual(SENSITIVITY_TIERS.SENSITIVE, 2);
   assert.strictEqual(SENSITIVITY_TIERS.SECRET, 3);
 
-  // Expected 13 categories plus unknown
+  // Expected 14 categories plus unknown
   const expectedCategories = [
     'name',
     'email',
     'phone',
     'address',
+    'username',
     'password',
     'otp',
     'credit_card',
@@ -274,6 +275,13 @@ test('Phase A5: DOM Attribute PII Detection', () => {
     ariaLabel: 'Social Security Number',
   });
   assert.ok(ssnEntities.some((e) => e.category === 'government_id'));
+
+  const userEntities = detectPIIFromDOMAttributes({
+    elementId: 'input-user',
+    name: 'user_login',
+    autocomplete: 'username',
+  });
+  assert.ok(userEntities.some((e) => e.category === 'username' && e.tier === SENSITIVITY_TIERS.PERSONAL));
 });
 
 test('Phase A5: Perception Elements Batch Detection', () => {
@@ -427,9 +435,13 @@ test('Phase A9: Local Token Vault Behavior and Security Invariants', () => {
   const personToken = vault.tokenize('name', 'Alice Wonderland');
   assert.strictEqual(personToken, '[PERSON_1]');
 
+  const usernameToken = vault.tokenize('username', 'alice_wonder2026');
+  assert.strictEqual(usernameToken, '[USER_1]');
+
   // 4. Detokenization locally
   assert.strictEqual(vault.detokenize('[EMAIL_1]'), 'john.doe@example.com');
   assert.strictEqual(vault.detokenize('[PERSON_1]'), 'Alice Wonderland');
+  assert.strictEqual(vault.detokenize('[USER_1]'), 'alice_wonder2026');
   assert.strictEqual(vault.detokenize('[NON_EXISTENT]'), undefined);
 
   // 5. Detokenize entire text

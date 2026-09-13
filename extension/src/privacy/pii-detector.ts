@@ -174,6 +174,16 @@ export function detectPIIFromDOMAttributes(ctx: DOMAttributeContext): DetectedEn
         elementId: ctx.elementId,
         bbox: ctx.bbox,
       });
+    } else if (auto === 'username' || auto === 'nickname') {
+      entities.push({
+        category: 'username',
+        tier: SENSITIVITY_TIERS.PERSONAL,
+        text: ctx.value,
+        confidence: 0.95,
+        source: 'dom',
+        elementId: ctx.elementId,
+        bbox: ctx.bbox,
+      });
     }
   }
 
@@ -258,6 +268,21 @@ export function detectPIIFromDOMAttributes(ctx: DOMAttributeContext): DetectedEn
           tier: SENSITIVITY_TIERS.SENSITIVE,
           text: ctx.value,
           confidence: 0.92,
+          source: 'dom',
+          elementId: ctx.elementId,
+          bbox: ctx.bbox,
+        });
+      }
+    }
+
+    // Username / Handle signals
+    if (/\b(?:username|user[-_\s]?name|login[-_\s]?id|account[-_\s]?name|handle)\b/i.test(attributeDescriptor)) {
+      if (!entities.some((e) => e.category === 'username' || e.category === 'password' || e.category === 'email')) {
+        entities.push({
+          category: 'username',
+          tier: SENSITIVITY_TIERS.PERSONAL,
+          text: ctx.value,
+          confidence: 0.90,
           source: 'dom',
           elementId: ctx.elementId,
           bbox: ctx.bbox,

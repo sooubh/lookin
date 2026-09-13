@@ -17,6 +17,7 @@ export type PrivacyCategory =
   | 'email'
   | 'phone'
   | 'address'
+  | 'username'
   | 'password'
   | 'otp'
   | 'credit_card'
@@ -31,7 +32,7 @@ export type PrivacyCategory =
 /**
  * Static mapping of categories to their default sensitivity tiers.
  * - Tier 0 (Public): General UI elements, buttons, public text
- * - Tier 1 (Personal): PII identifiers (name, email, phone, address, ip_address)
+ * - Tier 1 (Personal): PII identifiers (name, email, phone, address, username, ip_address)
  * - Tier 2 (Sensitive): Financial values, IDs, accounts, private documents, faces
  * - Tier 3 (Secret): Passwords, OTPs, API keys, tokens, CVVs (STRICTLY BLOCKED)
  */
@@ -40,6 +41,7 @@ export const CATEGORY_TIER_MAP: Record<PrivacyCategory, SensitivityTier> = {
   email: SENSITIVITY_TIERS.PERSONAL,
   phone: SENSITIVITY_TIERS.PERSONAL,
   address: SENSITIVITY_TIERS.PERSONAL,
+  username: SENSITIVITY_TIERS.PERSONAL,
   ip_address: SENSITIVITY_TIERS.PERSONAL,
 
   credit_card: SENSITIVITY_TIERS.SENSITIVE,
@@ -95,6 +97,8 @@ export function getCategoryDisplayName(category: PrivacyCategory): string {
       return 'Phone Number';
     case 'address':
       return 'Physical Address';
+    case 'username':
+      return 'Username / Account Handle';
     case 'password':
       return 'Password / Credential';
     case 'otp':
