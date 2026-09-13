@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Privacy-Preserving Browser Vision Agent",
+  "version": "0.1.0",
+  "description": "Local perception, privacy firewall, and policy-guarded browser automation.",
+  "permissions": [
+    "activeTab",
+    "sidePanel",
+    "storage",
+    "tabs",
+    "scripting"
+  ],
+  "action": {
+    "default_title": "Privacy Agent Side Panel"
+  },
+  "side_panel": {
+    "default_path": "dist/sidepanel/index.html"
+  },
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

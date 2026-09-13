@@ -1,0 +1,23 @@
+{
+  "name": "privacy-browser-agent",
+  "version": "0.1.0",
+  "description": "Privacy-Preserving Browser Vision Agent with Local Perception and Policy-Guarded Reasoning",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.js",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/**/*.test.js tests/**/*.test.mjs",
+    "start:server": "node server/src/index.js",
+    "serve:demo": "node demo-site/serve.js"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.312",
+    "@types/node": "^22.13.10",
+    "esbuild": "0.28.2",
+    "typescript": "^5.8.2"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7"
+  }
+}

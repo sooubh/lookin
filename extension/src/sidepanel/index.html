@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Browser Agent</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #38bdf8;
+      --accent: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 16px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+    }
+    h1 {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--primary);
+      text-transform: uppercase;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .badge-success { background: rgba(16, 185, 129, 0.2); color: var(--accent); }
+    .badge-idle { background: rgba(148, 163, 184, 0.2); color: var(--text-muted); }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 14px;
+    }
+    .card-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 3px 0;
+      font-family: monospace;
+    }
+    .stat-label { color: var(--text-muted); }
+    .stat-val { font-weight: 600; }
+    .stat-val.safe { color: var(--accent); }
+
+    .task-input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    textarea {
+      width: 100%;
+      height: 70px;
+      background: #090d16;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      padding: 8px;
+      font-size: 12px;
+      resize: vertical;
+    }
+    textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+    button {
+      background: var(--primary);
+      color: #04121e;
+      border: none;
+      border-radius: 4px;
+      padding: 8px 12px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 12px;
+      transition: opacity 0.15s;
+    }
+    button:hover { opacity: 0.9; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .page-info {
+      font-size: 11px;
+      word-break: break-all;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <h1>Privacy Firewall Agent</h1>
+      <span id="system-status-badge" class="badge badge-success">READY</span>
+    </div>
+  </header>
+
+  <!-- Health & Page Status -->
+  <div class="card">
+    <div class="card-title">
+      <span>System & Page Health</span>
+      <button id="refresh-page-btn" style="padding: 2px 6px; font-size: 10px;">Refresh</button>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Service Worker</span>
+      <span id="worker-status" class="stat-val safe">CONNECTED</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Active Elements</span>
+      <span id="element-count" class="stat-val">0</span>
+    </div>
+    <div class="page-info" id="page-title">Detecting active page...</div>
+    <div class="page-info" id="page-url"></div>
+  </div>
+
+  <!-- Task Input -->
+  <div class="card">
+    <div class="card-title">User Task</div>
+    <div class="task-input-group">
+      <textarea id="task-input" placeholder="e.g., Fill the form with sample information and submit it"></textarea>
+      <button id="run-task-btn">Run Protected Task</button>
+    </div>
+  </div>
+
+  <!-- Privacy Receipts & Metrics Preview -->
+  <div class="card">
+    <div class="card-title">Privacy Firewall Metrics</div>
+    <div class="stat-row">
+      <span class="stat-label">PII Detected</span>
+      <span id="metric-pii-detected" class="stat-val">0</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Blocked</span>
+      <span id="metric-blocked" class="stat-val">0</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Tokenized</span>
+      <span id="metric-tokenized" class="stat-val">0</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Allowed</span>
+      <span id="metric-allowed" class="stat-val">0</span>
+    </div>
+    <div class="stat-row" style="margin-top: 6px; border-top: 1px dashed var(--border); padding-top: 6px;">
+      <span class="stat-label">Raw Screenshot Sent</span>
+      <span class="stat-val safe">NO</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Raw PII/Secrets Sent</span>
+      <span class="stat-val safe">NO</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Sanitized Context Size</span>
+      <span id="metric-context-size" class="stat-val">0 KB</span>
+    </div>
+  </div>
+
+  <!-- Action Guard Output -->
+  <div class="card">
+    <div class="card-title">Local Action Guard</div>
+    <div id="action-guard-status" style="color: var(--text-muted); font-size: 11px;">
+      Awaiting task initiation...
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
