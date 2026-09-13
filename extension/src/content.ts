@@ -3,7 +3,9 @@
  * Responsible for local DOM inspection and returning safe page metadata.
  */
 
-import { PageMetadataResponse } from './common/messages.js';
+import { PageMetadataResponse, PerceptionResponseMessage } from './common/messages.js';
+import { fusePerception } from './perception/fusion.js';
+import { BrowserExecutor } from './agent/executor.js';
 
 function getPageMetadata(): Omit<PageMetadataResponse, 'id' | 'timestamp'> {
   const interactiveSelectors = 'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="textbox"]';
@@ -30,6 +32,50 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       id: message.id,
       timestamp: Date.now(),
     });
+    return true;
+  }
+
+  if (message.type === 'RUN_PERCEPTION') {
+    const perception = fusePerception({ document, window });
+    const response: PerceptionResponseMessage = {
+      type: 'PERCEPTION_RESPONSE',
+      id: message.id,
+      perception,
+      timestamp: Date.now(),
+    };
+    sendResponse(response);
+    return true;
+  }
+
+  if (message.type === 'EXECUTE_ACTION') {
+    const perception = fusePerception({ document, window });
+    const executor = new BrowserExecutor();
+    if (message.tokenMappings) {
+      for (const [token, secret] of Object.entries(message.tokenMappings)) {
+        executor.getTokenVault().store(token, secret as string);
+      }
+    }
+    executor.execute(message.action, perception, { document, window }, { userConfirmed: message.confirmed })
+      .then((res) => {
+        sendResponse({
+          type: 'ACTION_EXECUTION_RESULT',
+          id: message.id,
+          success: res.success,
+          action: message.action,
+          error: res.error,
+          timestamp: Date.now(),
+        });
+      })
+      .catch((err) => {
+        sendResponse({
+          type: 'ACTION_EXECUTION_RESULT',
+          id: message.id,
+          success: false,
+          action: message.action,
+          error: err?.message || String(err),
+          timestamp: Date.now(),
+        });
+      });
     return true;
   }
 

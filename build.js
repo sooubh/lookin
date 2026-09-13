@@ -21,6 +21,10 @@ async function build() {
   fs.copyFileSync('extension/manifest.json', path.join(outDir, 'manifest.json'));
   fs.copyFileSync('extension/src/sidepanel/index.html', path.join(sidepanelDist, 'index.html'));
 
+  console.log('[Build] Compiling TypeScript declaration and modules...');
+  const { execSync } = await import('child_process');
+  execSync('npx tsc', { stdio: 'inherit' });
+
   console.log('[Build] Building extension bundles with esbuild...');
 
   // 1. Background Service Worker

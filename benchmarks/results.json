@@ -1,0 +1,100 @@
+{
+  "timestamp": "2026-09-13T06:18:23.895Z",
+  "system": {
+    "nodeVersion": "v24.18.0",
+    "platform": "android",
+    "arch": "arm64",
+    "memoryHeapUsedMB": 5.52
+  },
+  "summary": {
+    "totalWorkflows": 2,
+    "overallPrecision": 0.9375,
+    "overallRecall": 1,
+    "overallF1": 0.9667,
+    "averageRedactionAccuracy": 100,
+    "averagePayloadReductionPct": 91.96,
+    "zeroLeakCompliance": true
+  },
+  "workflows": {
+    "workflow_a": {
+      "workflowId": "workflow_a",
+      "name": "Workflow A: Private Form Assistant",
+      "metrics": {
+        "truePositives": 7,
+        "falsePositives": 1,
+        "falseNegatives": 0,
+        "precision": 0.875,
+        "recall": 1,
+        "f1Score": 0.9333
+      },
+      "redaction": {
+        "totalSecrets": 4,
+        "leakedSecrets": 0,
+        "redactionAccuracy": 100,
+        "leakedValues": [],
+        "zeroLeakEnforced": true
+      },
+      "byteReduction": {
+        "rawBytes": 11514,
+        "sanitizedBytes": 909,
+        "bytesSaved": 10605,
+        "reductionPercentage": 92.11,
+        "compressionRatio": 12.67
+      },
+      "latency": {
+        "localPerceptionMs": 2.39,
+        "localPrivacyMs": 0.68,
+        "localGuardMs": 4.89,
+        "totalLocalMs": 7.96,
+        "serverReasoningMs": 320,
+        "totalE2EMs": 327.96,
+        "localOverheadPct": 2.43
+      },
+      "invariants": {
+        "rawScreenshotSent": false,
+        "rawSecretsSent": false,
+        "actionGuardVerified": true
+      }
+    },
+    "workflow_b": {
+      "workflowId": "workflow_b",
+      "name": "Workflow B: Private Account Statement Analysis",
+      "metrics": {
+        "truePositives": 3,
+        "falsePositives": 0,
+        "falseNegatives": 0,
+        "precision": 1,
+        "recall": 1,
+        "f1Score": 1
+      },
+      "redaction": {
+        "totalSecrets": 1,
+        "leakedSecrets": 0,
+        "redactionAccuracy": 100,
+        "leakedValues": [],
+        "zeroLeakEnforced": true
+      },
+      "byteReduction": {
+        "rawBytes": 11152,
+        "sanitizedBytes": 913,
+        "bytesSaved": 10239,
+        "reductionPercentage": 91.81,
+        "compressionRatio": 12.21
+      },
+      "latency": {
+        "localPerceptionMs": 1.41,
+        "localPrivacyMs": 0.11,
+        "localGuardMs": 0.85,
+        "totalLocalMs": 2.37,
+        "serverReasoningMs": 285,
+        "totalE2EMs": 287.37,
+        "localOverheadPct": 0.82
+      },
+      "invariants": {
+        "rawScreenshotSent": false,
+        "rawSecretsSent": false,
+        "actionGuardVerified": true
+      }
+    }
+  }
+}

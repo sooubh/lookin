@@ -25,33 +25,61 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
-  // Forward GET_PAGE_METADATA to active tab content script
-  if (message.type === 'GET_PAGE_METADATA') {
+  // Forward GET_PAGE_METADATA, RUN_PERCEPTION, or EXECUTE_ACTION to active tab content script
+  if (message.type === 'GET_PAGE_METADATA' || message.type === 'RUN_PERCEPTION' || message.type === 'EXECUTE_ACTION') {
     chrome.tabs.query({ active: true, currentWindow: true }).then(([activeTab]) => {
       if (!activeTab?.id) {
-        sendResponse({
-          type: 'PAGE_METADATA_RESPONSE',
-          id: message.id,
-          url: '',
-          title: 'No active tab',
-          viewport: { width: 0, height: 0 },
-          interactiveCount: 0,
-          timestamp: Date.now(),
-        });
+        if (message.type === 'GET_PAGE_METADATA') {
+          sendResponse({
+            type: 'PAGE_METADATA_RESPONSE',
+            id: message.id,
+            url: '',
+            title: 'No active tab',
+            viewport: { width: 0, height: 0 },
+            interactiveCount: 0,
+            timestamp: Date.now(),
+          });
+        } else {
+          sendResponse({
+            type: 'PERCEPTION_RESPONSE',
+            id: message.id,
+            perception: {
+              viewport: { width: 0, height: 0 },
+              url: '',
+              title: 'No active tab',
+              elements: [],
+              timestamp: Date.now(),
+            },
+          });
+        }
         return;
       }
 
       chrome.tabs.sendMessage(activeTab.id, message, (response) => {
         if (chrome.runtime.lastError) {
-          sendResponse({
-            type: 'PAGE_METADATA_RESPONSE',
-            id: message.id,
-            url: activeTab.url || '',
-            title: activeTab.title || '',
-            viewport: { width: 0, height: 0 },
-            interactiveCount: 0,
-            timestamp: Date.now(),
-          });
+          if (message.type === 'GET_PAGE_METADATA') {
+            sendResponse({
+              type: 'PAGE_METADATA_RESPONSE',
+              id: message.id,
+              url: activeTab.url || '',
+              title: activeTab.title || '',
+              viewport: { width: 0, height: 0 },
+              interactiveCount: 0,
+              timestamp: Date.now(),
+            });
+          } else {
+            sendResponse({
+              type: 'PERCEPTION_RESPONSE',
+              id: message.id,
+              perception: {
+                viewport: { width: 0, height: 0 },
+                url: activeTab.url || '',
+                title: activeTab.title || '',
+                elements: [],
+                timestamp: Date.now(),
+              },
+            });
+          }
         } else {
           sendResponse(response);
         }
