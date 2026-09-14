@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-09-13T20:30:01.858Z",
+  "timestamp": "2026-09-14T03:18:14.644Z",
   "system": {
     "nodeVersion": "v24.11.1",
     "platform": "win32",
     "arch": "x64",
-    "memoryHeapUsedMB": 5.91
+    "memoryHeapUsedMB": 5.92
   },
   "summary": {
     "totalWorkflows": 2,
@@ -42,13 +42,13 @@
         "compressionRatio": 13.13
       },
       "latency": {
-        "localPerceptionMs": 1.05,
-        "localPrivacyMs": 0.5,
-        "localGuardMs": 1.93,
-        "totalLocalMs": 3.48,
+        "localPerceptionMs": 0.87,
+        "localPrivacyMs": 0.22,
+        "localGuardMs": 1.06,
+        "totalLocalMs": 2.15,
         "serverReasoningMs": 320,
-        "totalE2EMs": 323.48,
-        "localOverheadPct": 1.08
+        "totalE2EMs": 322.15,
+        "localOverheadPct": 0.67
       },
       "invariants": {
         "rawScreenshotSent": false,
@@ -82,13 +82,13 @@
         "compressionRatio": 12.68
       },
       "latency": {
-        "localPerceptionMs": 0.39,
-        "localPrivacyMs": 0.05,
+        "localPerceptionMs": 0.23,
+        "localPrivacyMs": 0.02,
         "localGuardMs": 0.85,
-        "totalLocalMs": 1.29,
+        "totalLocalMs": 1.11,
         "serverReasoningMs": 285,
-        "totalE2EMs": 286.29,
-        "localOverheadPct": 0.45
+        "totalE2EMs": 286.11,
+        "localOverheadPct": 0.39
       },
       "invariants": {
         "rawScreenshotSent": false,

@@ -6,6 +6,7 @@ import { validateActionPlan, assertValidActionPlan } from '../server/src/schemas
 import { validateSanitizedPayload } from '../server/src/schemas/sanitized-payload.js';
 import { readJsonBody, PayloadTooLargeError, MalformedJsonError } from '../server/src/middleware/size-limit.js';
 import { getProvider, MockProvider, OpenRouterProvider, GroqProvider } from '../server/src/providers/index.js';
+import { safeSanitizeLog } from '../server/src/routes/agent.js';
 
 // Helper to launch test server on an ephemeral random port
 async function launchTestServer() {
@@ -666,3 +667,254 @@ test('Integration: Model schema validation failure returns 502 Bad Gateway', asy
     await close();
   }
 });
+
+test('Integration: Model output with fill and targetId produces structured action plan', async () => {
+  const { baseUrl, close } = await launchTestServer();
+  const mock = getProvider('mock');
+
+  try {
+    // Model returns actions matching user prompt example:
+    // { actions: [{ type: "fill", targetId: "el_12", value: "[EMAIL_1]" }, { type: "click", targetId: "el_31" }] }
+    mock.setMockResponse({
+      actions: [
+        {
+          type: 'fill',
+          targetId: 'el_12',
+          value: '[EMAIL_1]',
+        },
+        {
+          type: 'click',
+          targetId: 'el_31',
+        },
+      ],
+    });
+
+    const res = await fetch(`${baseUrl}/agent/reason`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task: 'Fill the email field and click continue',
+        context: {
+          url: 'https://example.com/signup',
+          dom: [
+            { id: 'el_12', role: 'textbox', text: '' },
+            { id: 'el_31', role: 'button', text: 'Continue' },
+          ],
+        },
+        provider: 'mock',
+      }),
+    });
+
+    assert.strictEqual(res.status, 200, 'POST /agent/reason should succeed for fill/click plan');
+    const data = await res.json();
+    assert.strictEqual(data.actions.length, 2);
+
+    // Action 1: fill
+    assert.strictEqual(data.actions[0].type, 'fill');
+    assert.strictEqual(data.actions[0].targetId, 'el_12');
+    assert.strictEqual(data.actions[0].target.id, 'el_12');
+    assert.strictEqual(data.actions[0].value, '[EMAIL_1]');
+    assert.strictEqual(data.actions[0].risk, 'medium');
+
+    // Action 2: click
+    assert.strictEqual(data.actions[1].type, 'click');
+    assert.strictEqual(data.actions[1].targetId, 'el_31');
+    assert.strictEqual(data.actions[1].target.id, 'el_31');
+    assert.strictEqual(data.actions[1].risk, 'low');
+  } finally {
+    mock.reset();
+    await close();
+  }
+});
+
+test('Integration: Provider failure returns 502 Bad Gateway', async () => {
+  const { baseUrl, close } = await launchTestServer();
+  const mock = getProvider('mock');
+
+  try {
+    mock.setError('Upstream LLM network connectivity error');
+
+    const res = await fetch(`${baseUrl}/agent/reason`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task: 'Perform task',
+        context: {},
+        provider: 'mock',
+      }),
+    });
+
+    assert.strictEqual(res.status, 502, 'Should return 502 when provider throws error');
+    const body = await res.json();
+    assert.strictEqual(body.error, 'AI reasoning failed');
+    assert.ok(body.message.includes('connectivity error'));
+  } finally {
+    mock.reset();
+    await close();
+  }
+});
+
+test('Integration: Provider timeout returns 504 Gateway Timeout', async () => {
+  const { baseUrl, close } = await launchTestServer();
+  const mock = getProvider('mock');
+
+  try {
+    const timeoutErr = new Error('The operation was aborted due to timeout');
+    timeoutErr.name = 'AbortError';
+    mock.setError(timeoutErr);
+
+    const res = await fetch(`${baseUrl}/agent/reason`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task: 'Slow task',
+        context: {},
+        provider: 'mock',
+      }),
+    });
+
+    assert.strictEqual(res.status, 504, 'Should return 504 on provider timeout');
+    const body = await res.json();
+    assert.strictEqual(body.error, 'Gateway Timeout');
+    assert.strictEqual(body.message, 'AI provider request timed out');
+  } finally {
+    mock.reset();
+    await close();
+  }
+});
+
+test('Integration: Malformed model response returns 502 Bad Gateway', async () => {
+  const { baseUrl, close } = await launchTestServer();
+  const mock = getProvider('mock');
+
+  try {
+    // Model returns raw non-action JSON
+    mock.setMockResponse({ message: 'I cannot help with that.' });
+
+    const res = await fetch(`${baseUrl}/agent/reason`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task: 'Perform task',
+        context: {},
+        provider: 'mock',
+      }),
+    });
+
+    assert.strictEqual(res.status, 502, 'Should return 502 on model output lacking actions array');
+    const body = await res.json();
+    assert.strictEqual(body.error, 'Model output schema validation failed');
+  } finally {
+    mock.reset();
+    await close();
+  }
+});
+
+test('Integration: Rejects requests with missing or empty task with 400 Bad Request', async () => {
+  const { baseUrl, close } = await launchTestServer();
+
+  try {
+    const resEmpty = await fetch(`${baseUrl}/agent/reason`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task: '   ',
+        context: {},
+      }),
+    });
+
+    assert.strictEqual(resEmpty.status, 400);
+    const body = await resEmpty.json();
+    assert.ok(body.violations.some((v) => v.includes('task')));
+  } finally {
+    await close();
+  }
+});
+
+test('Integration: Rejects raw screenshots and raw images with 400 Bad Request', async () => {
+  const { baseUrl, close } = await launchTestServer();
+
+  try {
+    // 1. Sending screenshot property
+    const resScreen = await fetch(`${baseUrl}/agent/reason`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task: 'Inspect page',
+        context: {
+          screenshot: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        },
+      }),
+    });
+    assert.strictEqual(resScreen.status, 400, 'Must reject raw screenshot');
+    const bodyScreen = await resScreen.json();
+    assert.ok(bodyScreen.violations.some((v) => v.toLowerCase().includes('screenshot')));
+
+    // 2. Sending rawScreenshot property
+    const resRawScreen = await fetch(`${baseUrl}/agent/reason`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task: 'Inspect page',
+        rawScreenshot: 'base64rawdata...',
+      }),
+    });
+    assert.strictEqual(resRawScreen.status, 400, 'Must reject rawScreenshot key');
+
+    // 3. Sending unredacted base64 image data under arbitrary property
+    const resImage = await fetch(`${baseUrl}/agent/reason`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task: 'Inspect page',
+        context: {
+          capturedImage: 'data:image/jpeg;base64,/9j/4AAQSkZJRg...',
+        },
+      }),
+    });
+    assert.strictEqual(resImage.status, 400, 'Must reject unredacted image data');
+    const bodyImage = await resImage.json();
+    assert.ok(bodyImage.violations.some((v) => v.toLowerCase().includes('image')));
+  } finally {
+    await close();
+  }
+});
+
+test('Integration: Rejects private keys and raw tokens with 400 Bad Request', async () => {
+  const { baseUrl, close } = await launchTestServer();
+
+  try {
+    const resKey = await fetch(`${baseUrl}/agent/reason`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task: 'Setup crypto',
+        context: {
+          key: '-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----',
+        },
+      }),
+    });
+    assert.strictEqual(resKey.status, 400, 'Must reject private key');
+    const bodyKey = await resKey.json();
+    assert.ok(bodyKey.violations.some((v) => v.toLowerCase().includes('private key') || v.toLowerCase().includes('secret')));
+  } finally {
+    await close();
+  }
+});
+
+test('Safe Logging: safeSanitizeLog redacts API keys, passwords, and card numbers', () => {
+  const logWithSecrets = safeSanitizeLog('Error: Failed with key sk-abcdef1234567890abcdef1234567890 and card 4111 2222 3333 4444');
+  assert.ok(!logWithSecrets.includes('sk-abcdef1234567890abcdef1234567890'), 'sk- key must be redacted');
+  assert.ok(!logWithSecrets.includes('4111 2222 3333 4444'), 'Card number must be redacted');
+  assert.ok(logWithSecrets.includes('sk-***'), 'Should contain redacted marker');
+  assert.ok(logWithSecrets.includes('****-****-****-****'), 'Should contain card mask');
+
+  const objWithSecrets = safeSanitizeLog({
+    user: 'alice',
+    password: 'superSecretPassword',
+    apiKey: 'sk-secret123456789012345',
+  });
+  assert.strictEqual(objWithSecrets.password, '[REDACTED]', 'Password key in object must be redacted');
+  assert.strictEqual(objWithSecrets.user, 'alice', 'Safe fields remain untouched');
+});
+

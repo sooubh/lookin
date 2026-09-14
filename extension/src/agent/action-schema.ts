@@ -13,7 +13,10 @@ import { ActionType, RiskLevel, ActionTarget } from '../common/types.js';
 export const ALLOWED_ACTION_TYPES: readonly ActionType[] = [
   'click',
   'type',
+  'fill',
   'select',
+  'check',
+  'uncheck',
   'scroll',
   'navigate',
   'focus',
@@ -119,6 +122,13 @@ export function validateActionSchema(rawAction: unknown): SchemaValidationResult
     };
   }
 
+  // Support targetId field
+  if ((action as any).targetId && !action.target) {
+    action.target = { id: String((action as any).targetId) };
+  } else if (action.target && (action as any).targetId && !action.target.id) {
+    action.target.id = String((action as any).targetId);
+  }
+
   const normalizedType = action.type.trim().toLowerCase() as AllowedActionType;
   if (!ALLOWED_ACTION_TYPES.includes(normalizedType)) {
     return {
@@ -131,7 +141,9 @@ export function validateActionSchema(rawAction: unknown): SchemaValidationResult
   switch (normalizedType) {
     case 'click':
     case 'focus':
-    case 'extract': {
+    case 'extract':
+    case 'check':
+    case 'uncheck': {
       if (!action.target && !action.coordinates) {
         return {
           valid: false,
@@ -141,17 +153,18 @@ export function validateActionSchema(rawAction: unknown): SchemaValidationResult
       break;
     }
 
-    case 'type': {
+    case 'type':
+    case 'fill': {
       if (!action.target && !action.coordinates) {
         return {
           valid: false,
-          error: 'Action "type" requires a target element or coordinates',
+          error: `Action "${normalizedType}" requires a target element or coordinates`,
         };
       }
       if (typeof action.value !== 'string') {
         return {
           valid: false,
-          error: 'Action "type" requires a string value',
+          error: `Action "${normalizedType}" requires a string value`,
         };
       }
       break;

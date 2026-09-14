@@ -134,7 +134,8 @@ export class BrowserExecutor {
           };
         }
 
-        case 'type': {
+        case 'type':
+        case 'fill': {
           const rawValue = action.value || '';
           // Resolve tokens right before DOM write
           let resolvedText = rawValue;
@@ -170,7 +171,7 @@ export class BrowserExecutor {
 
           return {
             success: true,
-            actionType: 'type',
+            actionType: action.type,
             targetId: targetEl.id || action.target?.id,
             tokensResolved,
             valueSanitized: rawValue, // Returns the safe tokenized version for logging
@@ -295,7 +296,7 @@ export class BrowserExecutor {
   }
 
   private requiresDomTarget(type: ActionType): boolean {
-    return ['click', 'type', 'select', 'focus', 'extract'].includes(type);
+    return ['click', 'type', 'fill', 'select', 'focus', 'extract'].includes(type);
   }
 
   private findDomElement(

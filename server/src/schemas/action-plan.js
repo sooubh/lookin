@@ -12,6 +12,7 @@
 export const ALLOWED_ACTION_TYPES = Object.freeze([
   'click',
   'type',
+  'fill',
   'select',
   'scroll',
   'navigate',
@@ -157,9 +158,17 @@ function validateAction(action, index, errors) {
     return;
   }
 
-  // 2. Validate risk
+  // Normalize targetId -> target: { id: targetId } if target is not provided
+  if (action.targetId && typeof action.targetId === 'string' && !action.target) {
+    action.target = { id: action.targetId.trim() };
+  } else if (action.target && typeof action.target === 'object' && action.targetId && !action.target.id) {
+    action.target.id = String(action.targetId).trim();
+  }
+
+  // 2. Validate risk (default to sensible level if missing)
   if (!action.risk || typeof action.risk !== 'string') {
-    errors.push(`${path}.risk must be specified ('low', 'medium', or 'high')`);
+    const isMedium = ['type', 'fill', 'select'].includes(normalizedType);
+    action.risk = isMedium ? 'medium' : 'low';
   } else {
     const normalizedRisk = action.risk.toLowerCase().trim();
     if (!ALLOWED_RISK_LEVELS.includes(normalizedRisk)) {
@@ -180,8 +189,12 @@ function validateAction(action, index, errors) {
       break;
 
     case 'type':
+    case 'fill':
       if (action.value === undefined || typeof action.value !== 'string') {
-        errors.push(`${path}: 'type' action requires a string 'value'`);
+        errors.push(`${path}: '${normalizedType}' action requires a string 'value'`);
+      }
+      if (!action.target || (typeof action.target === 'object' && Object.keys(action.target).length === 0)) {
+        errors.push(`${path}: '${normalizedType}' action requires a target identifier (id, text, selector, or bbox)`);
       }
       break;
 
@@ -265,18 +278,24 @@ export function validateActionPlan(plan) {
     valid: true,
     errors: [],
     plan: {
-      actions: plan.actions.map(action => ({
-        type: action.type.toLowerCase().trim(),
-        risk: action.risk.toLowerCase().trim(),
-        target: action.target ? { ...action.target } : undefined,
-        value: action.value !== undefined ? String(action.value) : undefined,
-        direction: action.direction ? String(action.direction).toLowerCase() : undefined,
-        amount: typeof action.amount === 'number' ? action.amount : undefined,
-        url: action.url !== undefined ? String(action.url) : undefined,
-        durationMs: action.durationMs ?? action.duration,
-        reason: action.reason ? String(action.reason) : undefined,
-        field: action.field ? String(action.field) : undefined,
-      })),
+      actions: plan.actions.map(action => {
+        const normalizedType = action.type.toLowerCase().trim();
+        const targetId = action.targetId || action.target?.id;
+        const defaultReason = `${normalizedType} action${targetId ? ` on ${targetId}` : ''}`;
+        return {
+          type: normalizedType,
+          risk: (action.risk || (['type', 'fill', 'select'].includes(normalizedType) ? 'medium' : 'low')).toLowerCase().trim(),
+          targetId: targetId ? String(targetId) : undefined,
+          target: action.target ? { ...action.target } : (targetId ? { id: String(targetId) } : undefined),
+          value: action.value !== undefined ? String(action.value) : undefined,
+          direction: action.direction ? String(action.direction).toLowerCase() : undefined,
+          amount: typeof action.amount === 'number' ? action.amount : undefined,
+          url: action.url !== undefined ? String(action.url) : undefined,
+          durationMs: action.durationMs ?? action.duration,
+          reason: action.reason ? String(action.reason) : defaultReason,
+          field: action.field ? String(action.field) : undefined,
+        };
+      }),
     },
   };
 }

@@ -123,7 +123,10 @@ export interface TaskRequirement {
 export type ActionType =
   | 'click'
   | 'type'
+  | 'fill'
   | 'select'
+  | 'check'
+  | 'uncheck'
   | 'scroll'
   | 'navigate'
   | 'focus'
@@ -142,6 +145,7 @@ export interface ActionTarget {
 
 export interface AgentAction {
   type: ActionType;
+  targetId?: string;
   target?: ActionTarget;
   value?: string;
   risk: RiskLevel;

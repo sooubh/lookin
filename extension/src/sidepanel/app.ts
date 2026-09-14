@@ -182,7 +182,10 @@ runTaskBtn.addEventListener('click', async () => {
     metricAllowedEl.textContent = String(receipt.allowed);
     metricContextSizeEl.textContent = `${(planned.sanitizedBytes / 1024).toFixed(1)} KB (-${planned.reductionPercent}%)`;
 
-    // 3. Call Node Gateway /agent/reason
+    // 3. Final Leak Guard: Strict fail-closed verification before network transmission
+    assertSafeToTransmit(sanitizedPayload, sessionTokenVault);
+
+    // 4. Call Node Gateway /agent/reason
     actionGuardStatusEl.innerHTML = `<em>Querying reasoning gateway (sanitized context only)...</em>`;
     const gatewayUrl = 'http://127.0.0.1:3000/agent/reason';
 
@@ -194,6 +197,7 @@ runTaskBtn.addEventListener('click', async () => {
         body: JSON.stringify({
           task,
           context: {
+            url: sanitizedPayload.url,
             dom: sanitizedPayload.safeDom,
             safeText: sanitizedPayload.safeText,
             sanitizedImage: null,

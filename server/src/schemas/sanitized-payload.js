@@ -26,7 +26,7 @@ const RAW_SECRET_PATTERNS = [
   /\b\d{3}-\d{2}-\d{4}\b/,
 ];
 
-// Disallowed property names that indicate token vault leaks or raw credential storage
+// Disallowed property names that indicate token vault leaks, raw credentials, or raw screenshots
 const DISALLOWED_KEYS = new Set([
   'tokenvault',
   'token_vault',
@@ -48,6 +48,12 @@ const DISALLOWED_KEYS = new Set([
   'credit_card',
   'cvv',
   'cvc',
+  'screenshot',
+  'rawscreenshot',
+  'raw_screenshot',
+  'rawscreenshotbase64',
+  'rawimage',
+  'raw_image',
 ]);
 
 // Token pattern: e.g. [PERSON_1], [EMAIL_2], [TOKEN_123]
@@ -89,6 +95,10 @@ function scanPayloadForViolations(val, path, violations) {
     if (leak) {
       violations.push(`${path}: ${leak}`);
     }
+    // Block raw unredacted data URI images unless explicitly sent as sanitizedImage
+    if (val.startsWith('data:image/') && !path.endsWith('sanitizedImage')) {
+      violations.push(`${path}: Raw unredacted image data detected. Only sanitizedImage is permitted.`);
+    }
   } else if (Array.isArray(val)) {
     val.forEach((item, index) => scanPayloadForViolations(item, `${path}[${index}]`, violations));
   } else if (typeof val === 'object') {
@@ -98,7 +108,11 @@ function scanPayloadForViolations(val, path, violations) {
     for (const key of keys) {
       const lowerKey = key.toLowerCase();
       if (DISALLOWED_KEYS.has(lowerKey)) {
-        violations.push(`${path}: Disallowed property '${key}' detected. Token vault mappings and raw secrets must remain on the client.`);
+        if (lowerKey.includes('screenshot') || lowerKey.includes('image')) {
+          violations.push(`${path}: Disallowed property '${key}' detected. Raw screenshots must never be sent to the server.`);
+        } else {
+          violations.push(`${path}: Disallowed property '${key}' detected. Token vault mappings and raw secrets must remain on the client.`);
+        }
       }
 
       // Check if keys themselves are token placeholders mapping to real values:
@@ -129,6 +143,16 @@ function scanPayloadForViolations(val, path, violations) {
       const otpStr = String(val.otp).trim();
       if (otpStr.length > 0 && !otpStr.startsWith('[') && !otpStr.endsWith(']')) {
         violations.push(`${path}.otp: Raw OTP code transmitted. Authentication codes must never leave the browser.`);
+      }
+    }
+
+    // 5. Check for explicit raw API key / secret properties
+    for (const secKey of ['apikey', 'api_key', 'privatekey', 'private_key']) {
+      if (secKey in val && typeof val[secKey] === 'string') {
+        const secretVal = val[secKey].trim();
+        if (secretVal.length > 0 && !secretVal.startsWith('[') && !secretVal.endsWith(']')) {
+          violations.push(`${path}.${secKey}: Raw secret/key transmitted. Secrets must never leave the browser.`);
+        }
       }
     }
 
